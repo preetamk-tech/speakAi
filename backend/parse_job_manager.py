@@ -38,10 +38,16 @@ class ParseJobManager:
     def __init__(self):
         self.jobs: Dict[str, Dict[str, Any]] = {}
 
-    def _purge_old_jobs(self, max_age_seconds: int = 900):
-        """Removes completed/stale parse jobs after 15 minutes to keep zero server footprint."""
+    def _purge_old_jobs(self, max_age_seconds: int = 3600):
+        """Removes stale or long-completed parse jobs safely without losing background uploads."""
         now = time.time()
-        expired = [jid for jid, j in self.jobs.items() if (now - j.get("created_at", now)) > max_age_seconds]
+        expired = []
+        for jid, j in self.jobs.items():
+            completed_at = j.get("completed_at")
+            if completed_at and (now - completed_at) > 900:
+                expired.append(jid)
+            elif (now - j.get("created_at", now)) > max_age_seconds:
+                expired.append(jid)
         for jid in expired:
             self.jobs.pop(jid, None)
 
@@ -85,7 +91,7 @@ class ParseJobManager:
         }
 
         if job["status"] in ("completed", "error"):
-            self.jobs.pop(job_id, None)
+            job.setdefault("completed_at", time.time())
 
         return payload
 
@@ -268,11 +274,13 @@ class ParseJobManager:
             job["eta_seconds"] = 0
             job["result"] = result
             job["status"] = "completed"
+            job["completed_at"] = time.time()
 
         except Exception as e:
             logger.error(f"Parse job {job_id} failed: {e}")
             job["error"] = str(e)
             job["status"] = "error"
+            job["completed_at"] = time.time()
             job["eta_seconds"] = 0
 
 

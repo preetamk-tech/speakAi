@@ -8,6 +8,10 @@ public class Book {
     private int overallProgress;
     private long createdAt;
     private String polishJobId = "";
+    private boolean isProcessing = false;
+    private int processingProgress = 0;
+    private String processingStage = "";
+    private String processingEta = "";
 
     public Book() {}
 
@@ -41,4 +45,16 @@ public class Book {
 
     public String getPolishJobId() { return polishJobId; }
     public void setPolishJobId(String polishJobId) { this.polishJobId = polishJobId != null ? polishJobId : ""; }
+
+    public boolean isProcessing() { return isProcessing; }
+    public void setProcessing(boolean processing) { isProcessing = processing; }
+
+    public int getProcessingProgress() { return processingProgress; }
+    public void setProcessingProgress(int processingProgress) { this.processingProgress = processingProgress; }
+
+    public String getProcessingStage() { return processingStage; }
+    public void setProcessingStage(String processingStage) { this.processingStage = processingStage != null ? processingStage : ""; }
+
+    public String getProcessingEta() { return processingEta; }
+    public void setProcessingEta(String processingEta) { this.processingEta = processingEta != null ? processingEta : ""; }
 }

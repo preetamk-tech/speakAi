@@ -75,6 +75,7 @@ class PolishJobManager:
             return None
 
         if ch["status"] == "pending":
+            ch["prioritized"] = True
             if chapter_index in job["queue"]:
                 job["queue"].remove(chapter_index)
             job["queue"].insert(0, chapter_index)
@@ -144,6 +145,7 @@ class PolishJobManager:
                 continue
 
             ch["status"] = "processing"
+            was_prioritized = ch.pop("prioritized", False)
             job["active_chapter"] = idx
 
             try:
@@ -171,7 +173,16 @@ class PolishJobManager:
                 ch["status"] = "ready"
                 job["completed_count"] += 1
 
-            await asyncio.sleep(0.05)
+            # Pace background Gemini calls (~4.5s gap => <=13 RPM) to stay safely under 15 RPM free limit,
+            # while skipping delay if user prioritized the next chapter.
+            if job["queue"]:
+                next_idx = job["queue"][0]
+                next_ch = job["chapters"].get(next_idx)
+                next_prioritized = bool(next_ch and next_ch.get("prioritized"))
+                if not was_prioritized and not next_prioritized:
+                    await asyncio.sleep(4.5)
+                else:
+                    await asyncio.sleep(0.1)
 
 
 polish_job_manager = PolishJobManager()

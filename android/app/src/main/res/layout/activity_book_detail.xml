@@ -152,7 +152,14 @@
         android:layout_marginTop="8dp"
         android:clipToPadding="false"
         android:paddingBottom="24dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayerContainer"
         app:layout_constraintTop_toBottomOf="@id/tvChaptersHeader" />
+
+    <include
+        android:id="@+id/miniPlayerContainer"
+        layout="@layout/view_mini_player"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -20,6 +20,7 @@ import com.speakai.app.database.AppDatabaseHelper;
 import com.speakai.app.models.Book;
 import com.speakai.app.models.Chapter;
 import com.speakai.app.network.ChapterSyncManager;
+import com.speakai.app.ui.MiniPlayerController;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +38,7 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
     private MaterialButton btnResumeBook;
     private ImageButton btnBack, btnDeleteBookDetail;
     private RecyclerView rvChapters;
+    private MiniPlayerController miniPlayerController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,12 +61,14 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
     protected void onResume() {
         super.onResume();
         ChapterSyncManager.getInstance(this).addListener(this);
+        if (miniPlayerController != null) miniPlayerController.onResume();
         loadBookData();
     }
 
     @Override
     protected void onPause() {
         ChapterSyncManager.getInstance(this).removeListener(this);
+        if (miniPlayerController != null) miniPlayerController.onPause();
         super.onPause();
     }
 
@@ -85,6 +89,7 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
         btnBack = findViewById(R.id.btnBack);
         btnDeleteBookDetail = findViewById(R.id.btnDeleteBookDetail);
         rvChapters = findViewById(R.id.rvChapters);
+        miniPlayerController = new MiniPlayerController(this, findViewById(R.id.miniPlayerContainer));
 
         rvChapters.setLayoutManager(new LinearLayoutManager(this));
         adapter = new ChapterAdapter(chapterList, this);

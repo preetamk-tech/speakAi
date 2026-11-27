@@ -1,5 +1,6 @@
 package com.speakai.app.adapters;
 
+import android.content.res.ColorStateList;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -8,6 +9,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.speakai.app.R;
@@ -41,9 +43,32 @@ public class BookAdapter extends RecyclerView.Adapter<BookAdapter.BookViewHolder
     public void onBindViewHolder(@NonNull BookViewHolder holder, int position) {
         Book book = books.get(position);
         holder.tvTitle.setText(book.getTitle());
-        holder.tvChapters.setText(book.getTotalChapters() + " Chapters");
-        holder.tvProgress.setText(book.getOverallProgress() + "% Completed");
-        holder.progressBar.setProgress(book.getOverallProgress());
+
+        if (book.isProcessing()) {
+            int amberColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.amber_accent);
+            String stage = book.getProcessingStage().isEmpty() ? "Processing in background..." : book.getProcessingStage();
+            holder.tvChapters.setText(stage);
+            holder.progressBar.setProgress(book.getProcessingProgress());
+            holder.progressBar.setProgressTintList(ColorStateList.valueOf(amberColor));
+
+            String eta = book.getProcessingEta();
+            String statusTxt = eta.isEmpty()
+                    ? (book.getProcessingProgress() + "%")
+                    : (book.getProcessingProgress() + "% • " + eta);
+            holder.tvProgress.setText(statusTxt);
+            holder.tvProgress.setTextColor(amberColor);
+            holder.btnDelete.setImageResource(R.drawable.ic_close);
+            holder.itemView.setAlpha(0.92f);
+        } else {
+            int primaryColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.primary);
+            holder.tvChapters.setText(book.getTotalChapters() + " Chapters");
+            holder.tvProgress.setText(book.getOverallProgress() + "% Completed");
+            holder.tvProgress.setTextColor(primaryColor);
+            holder.progressBar.setProgress(book.getOverallProgress());
+            holder.progressBar.setProgressTintList(ColorStateList.valueOf(primaryColor));
+            holder.btnDelete.setImageResource(R.drawable.ic_delete);
+            holder.itemView.setAlpha(1.0f);
+        }
 
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) listener.onBookClick(book);

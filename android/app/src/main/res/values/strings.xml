@@ -21,4 +21,8 @@
     <string name="female">Female</string>
     <string name="male">Male</string>
     <string name="speed">Speed:</string>
+    <string name="background_play">Play in Background</string>
+    <string name="background_play_desc">Keep playing when minimized or screen off</string>
+    <string name="play_pause">Play or Pause</string>
+    <string name="stop_playback">Stop Playback</string>
 </resources>

@@ -25,10 +25,10 @@ import com.google.android.material.button.MaterialButton;
 import com.speakai.app.adapters.BookAdapter;
 import com.speakai.app.database.AppDatabaseHelper;
 import com.speakai.app.models.Book;
-import com.speakai.app.models.Chapter;
 import com.speakai.app.models.QuickReadHolder;
 import com.speakai.app.network.ApiClient;
-import com.speakai.app.network.ChapterSyncManager;
+import com.speakai.app.network.BookUploadManager;
+import com.speakai.app.ui.MiniPlayerController;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -43,12 +43,13 @@ import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.Response;
 
-public class MainActivity extends AppCompatActivity implements BookAdapter.OnBookClickListener {
+public class MainActivity extends AppCompatActivity implements BookAdapter.OnBookClickListener, BookUploadManager.UploadListener {
 
     private RecyclerView rvBooks;
     private BookAdapter adapter;
     private final List<Book> bookList = new ArrayList<>();
     private AppDatabaseHelper dbHelper;
+    private MiniPlayerController miniPlayerController;
 
     private LinearLayout layoutEmptyState;
     private TextView tvBookCount;
@@ -56,9 +57,9 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
     private ActivityResultLauncher<String[]> filePickerLauncher;
     private String pendingMode = "book";
-    private boolean isCancelled = false;
+    private boolean isQuickCancelled = false;
 
-    private AlertDialog progressDialog;
+    private AlertDialog quickProgressDialog;
     private ProgressBar pbJobProgress;
     private TextView tvJobPercent, tvJobStage, tvJobEta;
     private final Handler pollHandler = new Handler(Looper.getMainLooper());
@@ -78,14 +79,25 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
     @Override
     protected void onResume() {
         super.onResume();
+        BookUploadManager uploadManager = BookUploadManager.getInstance(this);
+        uploadManager.addListener(this);
+        uploadManager.resumePendingIfNeeded();
+        if (miniPlayerController != null) miniPlayerController.onResume();
         loadBooks();
     }
 
     @Override
+    protected void onPause() {
+        BookUploadManager.getInstance(this).removeListener(this);
+        if (miniPlayerController != null) miniPlayerController.onPause();
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
-        isCancelled = true;
+        isQuickCancelled = true;
         pollHandler.removeCallbacksAndMessages(null);
-        dismissProgressDialog();
+        dismissQuickProgressDialog();
         super.onDestroy();
     }
 
@@ -95,6 +107,7 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         tvBookCount = findViewById(R.id.tvBookCount);
         btnQuickRead = findViewById(R.id.btnQuickRead);
         btnSaveBook = findViewById(R.id.btnSaveBook);
+        miniPlayerController = new MiniPlayerController(this, findViewById(R.id.miniPlayerContainer));
 
         rvBooks.setLayoutManager(new LinearLayoutManager(this));
         adapter = new BookAdapter(bookList, this);
@@ -106,6 +119,10 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         });
 
         btnSaveBook.setOnClickListener(v -> {
+            if (BookUploadManager.getInstance(this).isUploading()) {
+                Toast.makeText(this, "A book is already processing below in your library.", Toast.LENGTH_SHORT).show();
+                return;
+            }
             pendingMode = "book";
             showSourcePickerDialog(getString(R.string.save_book_title));
         });
@@ -122,62 +139,57 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         );
     }
 
-    private void showSourcePickerDialog(String dialogTitle) {
-        String[] options = {
-                getString(R.string.pick_document),
-                getString(R.string.pick_image)
-        };
-
+    private void showSourcePickerDialog(String title) {
+        String[] options = {"PDF Document", "Photo / Screenshot", "Word / Text File (.docx, .txt)"};
         new AlertDialog.Builder(this)
-                .setTitle(dialogTitle)
+                .setTitle(title)
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
+                        filePickerLauncher.launch(new String[]{"application/pdf"});
+                    } else if (which == 1) {
+                        filePickerLauncher.launch(new String[]{"image/*"});
+                    } else {
                         filePickerLauncher.launch(new String[]{
-                                "application/pdf",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 "application/msword",
                                 "text/plain"
                         });
-                    } else {
-                        filePickerLauncher.launch(new String[]{"image/*"});
                     }
                 })
                 .show();
     }
 
-    private void showProgressDialog(String mode) {
-        dismissProgressDialog();
-        isCancelled = false;
+    private void showQuickProgressDialog() {
+        isQuickCancelled = false;
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_upload_progress, null);
+        TextView tvTitle = dialogView.findViewById(R.id.tvProgressTitle);
+        tvJobStage = dialogView.findViewById(R.id.tvJobStage);
+        pbJobProgress = dialogView.findViewById(R.id.pbJobProgress);
+        tvJobPercent = dialogView.findViewById(R.id.tvJobPercent);
+        tvJobEta = dialogView.findViewById(R.id.tvJobEta);
 
-        View view = LayoutInflater.from(this).inflate(R.layout.dialog_upload_progress, null);
-        TextView tvTitle = view.findViewById(R.id.tvProgressTitle);
-        pbJobProgress = view.findViewById(R.id.pbJobProgress);
-        tvJobPercent = view.findViewById(R.id.tvJobPercent);
-        tvJobStage = view.findViewById(R.id.tvJobStage);
-        tvJobEta = view.findViewById(R.id.tvJobEta);
-
-        tvTitle.setText("quick".equals(mode) ? R.string.quick_read_title : R.string.save_book_title);
-        tvJobStage.setText("Uploading document to server...");
-        tvJobPercent.setText("5%");
+        tvTitle.setText(R.string.quick_read_title);
+        tvJobStage.setText("Uploading to server...");
         pbJobProgress.setProgress(5);
-        tvJobEta.setText("Starting...");
+        tvJobPercent.setText("5%");
+        tvJobEta.setText("");
 
-        progressDialog = new AlertDialog.Builder(this)
-                .setView(view)
+        quickProgressDialog = new AlertDialog.Builder(this)
+                .setView(dialogView)
                 .setCancelable(false)
                 .setNegativeButton(R.string.cancel, (d, w) -> {
-                    isCancelled = true;
+                    isQuickCancelled = true;
                     pollHandler.removeCallbacksAndMessages(null);
                 })
                 .create();
-        progressDialog.show();
+        quickProgressDialog.show();
     }
 
-    private void dismissProgressDialog() {
-        if (progressDialog != null && progressDialog.isShowing()) {
-            progressDialog.dismiss();
+    private void dismissQuickProgressDialog() {
+        if (quickProgressDialog != null && quickProgressDialog.isShowing()) {
+            quickProgressDialog.dismiss();
         }
-        progressDialog = null;
+        quickProgressDialog = null;
     }
 
     private String formatEta(int seconds) {
@@ -189,7 +201,9 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
     }
 
     private void processSelectedFile(Uri uri, final String mode) {
-        showProgressDialog(mode);
+        if ("quick".equals(mode)) {
+            showQuickProgressDialog();
+        }
 
         new Thread(() -> {
             try {
@@ -225,12 +239,21 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
                 fos.close();
                 is.close();
 
-                ApiClient.getInstance(this).startParseJob(tempFile, mimeType, mode, new Callback() {
+                if ("book".equals(mode)) {
+                    runOnUiThread(() -> {
+                        BookUploadManager.getInstance(MainActivity.this)
+                                .startBookUpload(tempFile, finalFileName, mimeType);
+                        loadBooks();
+                    });
+                    return;
+                }
+
+                ApiClient.getInstance(this).startParseJob(tempFile, mimeType, "quick", new Callback() {
                     @Override
                     public void onFailure(Call call, java.io.IOException e) {
                         tempFile.delete();
                         runOnUiThread(() -> {
-                            dismissProgressDialog();
+                            dismissQuickProgressDialog();
                             Toast.makeText(MainActivity.this, "Connection failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
                         });
                     }
@@ -240,7 +263,7 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
                         tempFile.delete();
                         if (!response.isSuccessful()) {
                             runOnUiThread(() -> {
-                                dismissProgressDialog();
+                                dismissQuickProgressDialog();
                                 Toast.makeText(MainActivity.this, "Server error: " + response.code(), Toast.LENGTH_LONG).show();
                             });
                             return;
@@ -250,10 +273,10 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
                             String body = response.body().string();
                             JSONObject json = new JSONObject(body);
                             String jobId = json.getString("job_id");
-                            runOnUiThread(() -> pollParseStatus(jobId, mode, finalFileName));
+                            runOnUiThread(() -> pollQuickParseStatus(jobId));
                         } catch (Exception ex) {
                             runOnUiThread(() -> {
-                                dismissProgressDialog();
+                                dismissQuickProgressDialog();
                                 Toast.makeText(MainActivity.this, "Upload error: " + ex.getMessage(), Toast.LENGTH_LONG).show();
                             });
                         }
@@ -262,30 +285,30 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    dismissProgressDialog();
+                    dismissQuickProgressDialog();
                     Toast.makeText(MainActivity.this, "Failed to read file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
             }
         }).start();
     }
 
-    private void pollParseStatus(final String jobId, final String mode, final String fileName) {
-        if (isCancelled) return;
+    private void pollQuickParseStatus(final String jobId) {
+        if (isQuickCancelled) return;
 
         ApiClient.getInstance(this).getParseStatus(jobId, new Callback() {
             @Override
             public void onFailure(Call call, java.io.IOException e) {
-                if (isCancelled) return;
-                pollHandler.postDelayed(() -> pollParseStatus(jobId, mode, fileName), 1200);
+                if (isQuickCancelled) return;
+                pollHandler.postDelayed(() -> pollQuickParseStatus(jobId), 1200);
             }
 
             @Override
             public void onResponse(Call call, Response response) {
-                if (isCancelled) return;
+                if (isQuickCancelled) return;
 
                 if (!response.isSuccessful()) {
                     runOnUiThread(() -> {
-                        dismissProgressDialog();
+                        dismissQuickProgressDialog();
                         Toast.makeText(MainActivity.this, "Processing error: " + response.code(), Toast.LENGTH_LONG).show();
                     });
                     return;
@@ -308,20 +331,19 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
                     if ("completed".equals(status)) {
                         JSONObject result = statusObj.getJSONObject("result");
-                        handleCompletedResult(result, mode, fileName);
+                        handleQuickResult(result);
                     } else if ("error".equals(status)) {
                         String err = statusObj.optString("error", "Parsing failed");
                         runOnUiThread(() -> {
-                            dismissProgressDialog();
+                            dismissQuickProgressDialog();
                             Toast.makeText(MainActivity.this, err, Toast.LENGTH_LONG).show();
                         });
                     } else {
-                        pollHandler.postDelayed(() -> pollParseStatus(jobId, mode, fileName), 800);
+                        pollHandler.postDelayed(() -> pollQuickParseStatus(jobId), 800);
                     }
-
                 } catch (Exception ex) {
                     runOnUiThread(() -> {
-                        dismissProgressDialog();
+                        dismissQuickProgressDialog();
                         Toast.makeText(MainActivity.this, "Parsing error: " + ex.getMessage(), Toast.LENGTH_LONG).show();
                     });
                 }
@@ -329,86 +351,51 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         });
     }
 
-    private void handleCompletedResult(JSONObject json, String mode, String fileName) {
+    private void handleQuickResult(JSONObject json) {
         try {
-            String title = json.optString("title", json.optString("book_title", "Untitled Document"));
+            String title = json.optString("title", json.optString("book_title", "Quick Read"));
             JSONArray chArray = json.optJSONArray("chapters");
-            if (chArray == null) {
-                chArray = new JSONArray();
-            }
+            if (chArray == null) chArray = new JSONArray();
 
-            if ("quick".equals(mode)) {
-                StringBuilder fullText = new StringBuilder();
-                for (int i = 0; i < chArray.length(); i++) {
-                    JSONObject chObj = chArray.getJSONObject(i);
-                    String c = chObj.optString("content", chObj.optString("text", ""));
-                    if (!c.isEmpty()) {
-                        if (fullText.length() > 0) fullText.append("\n\n");
-                        fullText.append(c);
-                    }
-                }
-                QuickReadHolder.set(title, fullText.toString());
-
-                runOnUiThread(() -> {
-                    dismissProgressDialog();
-                    Intent intent = new Intent(MainActivity.this, AudioPlayerActivity.class);
-                    intent.putExtra("is_quick_read", true);
-                    startActivity(intent);
-                });
-                return;
-            }
-
-            final String polishJobId = json.optString("polish_job_id", "");
-
-            List<Chapter> chapters = new ArrayList<>();
+            StringBuilder fullText = new StringBuilder();
             for (int i = 0; i < chArray.length(); i++) {
                 JSONObject chObj = chArray.getJSONObject(i);
-                Chapter chapter = new Chapter();
-                int chIndex = chObj.optInt("index", chObj.optInt("chapter_index", i + 1));
-                chapter.setChapterIndex(chIndex);
-                chapter.setTitle(chObj.optString("title", "Chapter " + chIndex));
-                String content = chObj.optString("content", chObj.optString("text", ""));
-                chapter.setContentText(content);
-                chapter.setCleanStatus(chObj.optString("clean_status", "ready"));
-                chapters.add(chapter);
+                String c = chObj.optString("content", chObj.optString("text", ""));
+                if (!c.isEmpty()) {
+                    if (fullText.length() > 0) fullText.append("\n\n");
+                    fullText.append(c);
+                }
             }
-
-            Book book = new Book();
-            book.setTitle(title);
-            book.setFilename(fileName);
-            int playableCount = 0;
-            for (Chapter ch : chapters) {
-                if (ch.getChapterIndex() > 0) playableCount++;
-            }
-            book.setTotalChapters(playableCount > 0 ? playableCount : chapters.size());
-            book.setPolishJobId(polishJobId);
-
-            long bookId = dbHelper.insertBook(book, chapters);
+            QuickReadHolder.set(title, fullText.toString());
 
             runOnUiThread(() -> {
-                if (!polishJobId.isEmpty()) {
-                    ChapterSyncManager.getInstance(MainActivity.this).startSync(bookId, polishJobId);
-                }
-                dismissProgressDialog();
-                loadBooks();
-                Intent intent = new Intent(MainActivity.this, BookDetailActivity.class);
-                intent.putExtra("book_id", bookId);
+                dismissQuickProgressDialog();
+                Intent intent = new Intent(MainActivity.this, AudioPlayerActivity.class);
+                intent.putExtra("is_quick_read", true);
                 startActivity(intent);
             });
         } catch (Exception ex) {
             runOnUiThread(() -> {
-                dismissProgressDialog();
-                Toast.makeText(MainActivity.this, "Error saving document: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                dismissQuickProgressDialog();
+                Toast.makeText(MainActivity.this, "Quick Read error: " + ex.getMessage(), Toast.LENGTH_LONG).show();
             });
         }
     }
 
     private void loadBooks() {
         bookList.clear();
-        bookList.addAll(dbHelper.getAllBooks());
+        List<Book> saved = dbHelper.getAllBooks();
+        bookList.addAll(saved);
+
+        Book processingCard = BookUploadManager.getInstance(this).getProcessingBookCard();
+        if (processingCard != null) {
+            // Place processing book card below existing saved books
+            bookList.add(processingCard);
+        }
+
         adapter.notifyDataSetChanged();
 
-        tvBookCount.setText(bookList.size() + " Books");
+        tvBookCount.setText(saved.size() + " Books");
         if (bookList.isEmpty()) {
             layoutEmptyState.setVisibility(View.VISIBLE);
             rvBooks.setVisibility(View.GONE);
@@ -419,7 +406,28 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
     }
 
     @Override
+    public void onUploadUpdated() {
+        loadBooks();
+    }
+
+    @Override
+    public void onUploadCompleted(long bookId, String bookTitle) {
+        loadBooks();
+        Toast.makeText(this, bookTitle + " saved to library!", Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onUploadError(String message) {
+        loadBooks();
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    @Override
     public void onBookClick(Book book) {
+        if (book.isProcessing()) {
+            Toast.makeText(this, "Book is processing in background. Tap once complete.", Toast.LENGTH_SHORT).show();
+            return;
+        }
         Intent intent = new Intent(this, BookDetailActivity.class);
         intent.putExtra("book_id", book.getId());
         startActivity(intent);
@@ -427,6 +435,19 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
     @Override
     public void onDeleteClick(Book book) {
+        if (book.isProcessing()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Cancel Upload")
+                    .setMessage("Stop monitoring this book upload?")
+                    .setPositiveButton("Stop", (dialog, which) -> {
+                        BookUploadManager.getInstance(this).cancelUpload();
+                        loadBooks();
+                    })
+                    .setNegativeButton(R.string.cancel, null)
+                    .show();
+            return;
+        }
+
         new AlertDialog.Builder(this)
                 .setTitle(R.string.delete_book_title)
                 .setMessage(R.string.delete_book_confirm)
