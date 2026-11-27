@@ -58,30 +58,46 @@ def _heal_broken_indic_lines(text: str) -> str:
     )
 
 
+NOISE_SUBSTRING_PATTERN = re.compile(
+    r"(?i)(?:downloaded\s+from\s+\S*|https?://\S+|www\.\S+|\b\S*instapdf\S*)"
+)
+
+
+def _strip_inline_noise(line: str) -> str:
+    return re.sub(r"\s+", " ", NOISE_SUBSTRING_PATTERN.sub(" ", line or "")).strip()
+
+
 def clean_raw_page_lines(text: str) -> str:
     """
-    Removes scan watermarks, URLs, running page headers, and standalone unparenthesized
-    page numbers while preserving line breaks and chapter markers like (1) or 1. Title.
+    Removes scan watermarks, URLs, running page headers, and standalone bottom page numbers
+    while preserving line breaks and chapter markers like (1) or 1. Title.
     """
     if not text or not text.strip():
         return ""
 
     text = _heal_broken_indic_lines(text)
-    raw_lines = [l.strip() for l in text.splitlines() if l.strip()]
+    raw_lines = []
+    for l in text.splitlines():
+        stripped = _strip_inline_noise(l)
+        if not stripped:
+            continue
+        if NOISE_LINE_PATTERN.search(stripped) and len(stripped) < 45:
+            continue
+        raw_lines.append(stripped)
+
     if not raw_lines:
         return ""
 
     kept = []
     total = len(raw_lines)
     for idx, l_strip in enumerate(raw_lines):
-        if NOISE_LINE_PATTERN.search(l_strip):
-            continue
         if re.match(r"^[०-९\d]{1,4}\s*[/|\\]\s*.{1,35}$", l_strip) or re.match(r"^.{1,35}\s*[/|\\]\s*[०-९\d]{1,4}$", l_strip):
             continue
-        # Only strip unparenthesized standalone page numbers at top/bottom edge of page
-        if idx < 2 or idx >= total - 2:
-            if re.match(r"^(?:[-–—]\s*)?[०-९\d]{1,4}(?:\s*[-–—])?$", l_strip) or re.match(r"(?i)^page\s+\d{1,4}$", l_strip):
-                continue
+        # Only strip footer page numbers or explicit "Page X" markers, keeping top standalone numbers for TOC/chapter matching
+        if re.match(r"(?i)^page\s+\d{1,4}$", l_strip) or re.match(r"^[-–—]\s*[०-९\d]{1,4}\s*[-–—]$", l_strip):
+            continue
+        if idx >= total - 2 and re.match(r"^[०-९\d]{1,4}$", l_strip):
+            continue
         kept.append(l_strip)
 
     return "\n".join(kept).strip()
@@ -259,9 +275,11 @@ def is_junk_front_matter_page(page_text: str, page_index: int, total_pages: int)
     clean = page_text.strip()
     words = clean.split()
 
-    if page_index < min(6, total_pages) and len(words) < 35:
-        # Don't drop a short page if it clearly starts a numbered chapter like (1) Title
-        if not re.search(r"(?m)^(?:\(\s*[०-९\d]{1,3}\s*\)|chapter\s+\d+|अध्याय\s*[०-९\d]+)", clean, re.I):
+    if page_index < min(6, total_pages) and len(words) < 25:
+        # Don't drop a short page if it has narrative punctuation or starts a numbered chapter
+        has_marker = bool(re.search(r"(?m)^(?:\(?\s*[०-९\d]{1,3}\s*[\)\.]|chapter\s+\d+|अध्याय\s*[०-९\d]+)", clean, re.I))
+        has_sentence = bool(re.search(r"[।.?!]", clean))
+        if not has_marker and not has_sentence:
             return True
 
     if page_index < min(8, total_pages) or page_index >= max(0, total_pages - 2):

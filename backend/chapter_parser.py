@@ -13,11 +13,11 @@ EXPLICIT_CHAPTER_PATTERNS = [
 ]
 
 STANDALONE_NUM_PATTERN = re.compile(
-    r"^(?:\(\s*([०-९0-9]{1,3})\s*\)|\[\s*([०-९0-9]{1,3})\s*\]|([०-९0-9]{1,3})\.)$"
+    r"^(?:\(\s*([०-९0-9]{1,3})\s*\)|\[\s*([०-९0-9]{1,3})\s*\]|([०-९0-9]{1,3})\s*[\.\)])$"
 )
 
 SAMELINE_NUM_PATTERN = re.compile(
-    r"^(?:\(\s*([०-९0-9]{1,3})\s*\)|\[\s*([०-९0-9]{1,3})\s*\]|([०-९0-9]{1,3})\.)\s+(.{2,75})$"
+    r"^(?:\(\s*([०-९0-9]{1,3})\s*\)\s*|\[\s*([०-९0-9]{1,3})\s*\]\s*|([०-९0-9]{1,3})\.\s+)(.{2,75})$"
 )
 
 
@@ -29,8 +29,9 @@ def _parse_num(s: Optional[str]) -> Optional[int]:
 
 
 def _norm_for_match(s: str) -> str:
-    """Normalizes Devanagari/Latin text lightly to match OCR titles against Index titles."""
-    s = re.sub(r"[\u093C\u0901\u0902\s\W_]+", "", s or "", flags=re.UNICODE)
+    """Normalizes Devanagari/Latin text lightly (including common OCR swaps) to match titles against Index."""
+    s = (s or "").replace("र्ग", "ग").replace("िा", "हा").replace("िं", "हं")
+    s = re.sub(r"[\u093C\u0901\u0902\s\W_]+", "", s, flags=re.UNICODE)
     return s.lower()
 
 
@@ -134,10 +135,11 @@ def _find_numbered_chapters(lines: List[str], toc_map: Dict[int, str]) -> List[D
             i += 1
             continue
 
-        # 1. Standalone marker like "(1)", "[1]", "1." followed by title on next line
+        # 1. Standalone marker like "(1)", "[1]", "1.", or bare "1" matching a TOC entry followed by title
         m_alone = STANDALONE_NUM_PATTERN.match(line)
-        if m_alone:
-            num = _parse_num(m_alone.group(1) or m_alone.group(2) or m_alone.group(3))
+        bare_toc_num = _parse_num(line) if (toc_map and re.match(r"^[०-९0-9]{1,3}$", line)) else None
+        if m_alone or (bare_toc_num is not None and bare_toc_num in toc_map):
+            num = bare_toc_num if bare_toc_num is not None else _parse_num(m_alone.group(1) or m_alone.group(2) or m_alone.group(3))
             if num is not None and 1 <= num <= 500:
                 j = i + 1
                 while j < n_lines and not lines[j].strip() and (j - i) <= 2:
@@ -224,32 +226,46 @@ def _fill_missing_toc_gaps(
     augmented = list(anchors)
     for m_num in missing:
         expected_title = toc_map[m_num]
-        prev_anchors = [a for a in augmented if a["num"] < m_num]
-        next_anchors = [a for a in augmented if a["num"] > m_num]
+        prev_anchors = [a for a in augmented if (a.get("num") or 0) < m_num]
+        next_anchors = [a for a in augmented if (a.get("num") or 0) > m_num]
         lo = prev_anchors[-1]["body_line"] if prev_anchors else 0
         hi = next_anchors[0]["start_line"] if next_anchors else len(lines)
 
         best_idx = -1
+        best_body = -1
         best_score = 0.0
         for idx in range(lo, hi):
             cand_line = lines[idx].strip()
             if not _is_valid_title_candidate(cand_line):
                 continue
-            sc = _similarity(cand_line, expected_title)
-            if sc > best_score:
-                best_score = sc
+            sc1 = _similarity(cand_line, expected_title)
+            b_idx = idx + 1
+            parts = [cand_line]
+            for extra in (1, 2):
+                if idx + extra < hi and len(lines[idx + extra].strip()) <= 35:
+                    parts.append(lines[idx + extra].strip())
+                    sc_multi = _similarity(" ".join(parts), expected_title)
+                    if sc_multi > sc1:
+                        sc1 = sc_multi
+                        b_idx = idx + extra + 1
+                else:
+                    break
+            if sc1 > best_score:
+                best_score = sc1
                 best_idx = idx
+                best_body = b_idx
 
-        if best_idx != -1 and best_score >= 0.72:
+        if best_idx != -1 and best_score >= 0.58:
             augmented.append({
                 "start_line": best_idx,
-                "body_line": best_idx + 1,
+                "body_line": best_body,
                 "num": m_num,
                 "title": expected_title,
                 "explicit": False,
             })
+            augmented.sort(key=lambda a: a["start_line"])
 
-    return sorted(augmented, key=lambda a: a["start_line"])
+    return augmented
 
 
 def _format_display_title(ch_num: int, raw_title: str) -> str:
@@ -330,6 +346,7 @@ def split_into_chapters(
         return chapters
 
     healed_text = _heal_broken_indic_lines(text)
+    healed_text = re.sub(r"([।.!?])\s*(\(\s*[०-९0-9]{1,3}\s*\))", r"\1\n\2", healed_text)
     lines = healed_text.splitlines()
     toc_map = dict(toc_entries or [])
 
