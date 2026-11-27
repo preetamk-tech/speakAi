@@ -9,8 +9,6 @@ import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -55,7 +53,6 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
     private LinearLayout layoutEmptyState;
     private TextView tvBookCount;
     private MaterialButton btnQuickRead, btnSaveBook;
-    private ImageButton btnServerSettings;
 
     private ActivityResultLauncher<String[]> filePickerLauncher;
     private String pendingMode = "book";
@@ -98,7 +95,6 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         tvBookCount = findViewById(R.id.tvBookCount);
         btnQuickRead = findViewById(R.id.btnQuickRead);
         btnSaveBook = findViewById(R.id.btnSaveBook);
-        btnServerSettings = findViewById(R.id.btnServerSettings);
 
         rvBooks.setLayoutManager(new LinearLayoutManager(this));
         adapter = new BookAdapter(bookList, this);
@@ -113,8 +109,6 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
             pendingMode = "book";
             showSourcePickerDialog(getString(R.string.save_book_title));
         });
-
-        btnServerSettings.setOnClickListener(v -> showServerSettingsDialog());
     }
 
     private void setupPickers() {
@@ -436,22 +430,6 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
                     dbHelper.deleteBook(book.getId());
                     loadBooks();
                     Toast.makeText(this, "Book deleted", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
-    }
-
-    private void showServerSettingsDialog() {
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_server_settings, null);
-        EditText etServerUrl = dialogView.findViewById(R.id.etServerUrl);
-        etServerUrl.setText(ApiClient.getInstance(this).getBaseUrl());
-
-        new AlertDialog.Builder(this)
-                .setView(dialogView)
-                .setPositiveButton("Save", (dialog, which) -> {
-                    String newUrl = etServerUrl.getText().toString();
-                    ApiClient.getInstance(this).setBaseUrl(newUrl);
-                    Toast.makeText(this, "Server URL updated", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(R.string.cancel, null)
                 .show();

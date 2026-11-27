@@ -21,6 +21,4 @@
     <string name="female">Female</string>
     <string name="male">Male</string>
     <string name="speed">Speed:</string>
-    <string name="server_settings">Server Settings</string>
-    <string name="server_url">Server URL</string>
 </resources>

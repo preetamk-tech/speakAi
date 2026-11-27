@@ -1,7 +1,6 @@
 package com.speakai.app.network;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -19,39 +18,16 @@ import okhttp3.Response;
 
 public class ApiClient {
 
-    private static final String PREF_NAME = "speakai_prefs";
-    private static final String KEY_BASE_URL = "base_server_url";
-    
-    public static final String DEFAULT_BASE_URL = "http://10.106.206.128:8000";
-    public static final String WIFI_FALLBACK_URL = "http://10.106.206.128:8000";
+    public static final String DEFAULT_BASE_URL = "https://speakai-ptk6.onrender.com";
 
     private static ApiClient instance;
     private final OkHttpClient httpClient;
-    private final SharedPreferences prefs;
 
     private ApiClient(Context context) {
-        this.prefs = context.getApplicationContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
+                .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(300, TimeUnit.SECONDS)
                 .writeTimeout(300, TimeUnit.SECONDS)
-                .addInterceptor(chain -> {
-                    Request request = chain.request();
-                    try {
-                        return chain.proceed(request);
-                    } catch (java.io.IOException originalException) {
-                        String url = request.url().toString();
-                        if (url.contains("127.0.0.1:8000") || url.contains("localhost:8000") || url.contains("10.0.2.2:8000")) {
-                            String retryUrl = url
-                                    .replace("127.0.0.1:8000", "10.106.206.128:8000")
-                                    .replace("localhost:8000", "10.106.206.128:8000")
-                                    .replace("10.0.2.2:8000", "10.106.206.128:8000");
-                            Request retryRequest = request.newBuilder().url(retryUrl).build();
-                            return chain.proceed(retryRequest);
-                        }
-                        throw originalException;
-                    }
-                })
                 .build();
     }
 
@@ -63,21 +39,7 @@ public class ApiClient {
     }
 
     public String getBaseUrl() {
-        String saved = prefs.getString(KEY_BASE_URL, null);
-        if (saved == null || saved.equals("http://10.0.2.2:8000") || saved.equals("http://127.0.0.1:8000")) {
-            return DEFAULT_BASE_URL;
-        }
-        return saved;
-    }
-
-    public void setBaseUrl(String url) {
-        if (url != null && !url.trim().isEmpty()) {
-            String clean = url.trim();
-            if (clean.endsWith("/")) {
-                clean = clean.substring(0, clean.length() - 1);
-            }
-            prefs.edit().putString(KEY_BASE_URL, clean).apply();
-        }
+        return DEFAULT_BASE_URL;
     }
 
     public void startParseJob(File file, String mimeType, String mode, Callback callback) {
