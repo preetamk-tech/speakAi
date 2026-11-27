@@ -18,6 +18,7 @@ speakAi is a native Android (Java) and FastAPI audiobook/document reader built w
   - **Play in Background** toggle on the player screen (auto-pauses on app minimize or screen lock when OFF; continues with media notification controls when ON).
   - Saved per-book and global defaults for **Language** (`hi`, `mr`, `gu`, `bn`, `ta`, `te`, `en`), **Voice Gender**, and **Speed** (`0.8x`–`1.5x`).
   - Live search bars for both books and chapters.
+- **English Buddy (Conversational Tutor):** Built-in voice and text practice partner that accepts everyday English or mixed Hindi-English (Hinglish), gently frames cleaner English sentences with simple beginner-level vocabulary, and replies in Indian English neural voices (`en-IN`) with optional hands-free auto-mic and session mistake summaries.
 
 ## Architecture
 
@@ -50,15 +51,18 @@ speakAi/
 │       ├── MainActivity.java
 │       ├── BookDetailActivity.java
 │       ├── AudioPlayerActivity.java
+│       ├── EnglishTutorActivity.java
 │       ├── adapters/
 │       │   ├── BookAdapter.java
-│       │   └── ChapterAdapter.java
+│       │   ├── ChapterAdapter.java
+│       │   └── TutorMessageAdapter.java
 │       ├── database/
 │       │   └── AppDatabaseHelper.java
 │       ├── models/
 │       │   ├── Book.java
 │       │   ├── Chapter.java
-│       │   └── QuickReadHolder.java
+│       │   ├── QuickReadHolder.java
+│       │   └── TutorMessage.java
 │       ├── network/
 │       │   ├── ApiClient.java
 │       │   ├── BookUploadManager.java
@@ -84,6 +88,7 @@ speakAi/
 │   ├── translator.py
 │   ├── tone_analyzer.py
 │   ├── tts_engine.py
+│   ├── tutor_engine.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example

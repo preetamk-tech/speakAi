@@ -1,4 +1,6 @@
 import os
+import time
+import json
 import uuid
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -19,6 +21,7 @@ from chapter_parser import split_into_chapters
 from tone_analyzer import detect_document_tone
 from translator import translate_chunk
 from tts_engine import get_voice, convert_text_to_audio, VOICE_MAP
+from tutor_engine import generate_tutor_turn
 from session_manager import session_manager, AUDIO_ROOT
 
 app = FastAPI(title="speakAi - Document & Screenshot Narrator")
@@ -225,6 +228,72 @@ def get_direct_audio(filename: str):
 def list_voices():
     """Returns available language options and supported voices."""
     return {"languages": VOICE_MAP}
+
+
+def _purge_old_direct_audio(max_age_seconds: int = 900):
+    now = time.time()
+    for p in AUDIO_ROOT.glob("tutor_*.mp3"):
+        try:
+            if (now - p.stat().st_mtime) > max_age_seconds:
+                p.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+@app.post("/api/tutor/chat")
+async def tutor_chat(
+    message: str = Form(...),
+    history_json: str = Form("[]"),
+    topic: str = Form("Free Talk"),
+    level: str = Form("simple"),
+    gender: str = Form("female")
+):
+    """
+    Conversational English tutor endpoint supporting Hinglish input, gentle grammar fixes,
+    simple beginner phrasing, and Indian English neural speech synthesis.
+    """
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="Message text is required.")
+
+    try:
+        history = json.loads(history_json) if history_json else []
+        if not isinstance(history, list):
+            history = []
+    except Exception:
+        history = []
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        generate_tutor_turn,
+        message.strip(),
+        history,
+        topic,
+        level
+    )
+
+    _purge_old_direct_audio()
+    filename = f"tutor_{uuid.uuid4().hex[:10]}.mp3"
+    out_path = AUDIO_ROOT / filename
+    voice = get_voice(language="en", gender=gender)
+    rate = "-5%" if (level or "simple").lower() == "simple" else "+0%"
+
+    await convert_text_to_audio(
+        text=result["spoken_text"],
+        output_path=str(out_path),
+        voice=voice,
+        rate=rate
+    )
+
+    return {
+        "success": True,
+        "corrected": result["corrected"],
+        "tip": result["tip"],
+        "better_word": result["better_word"],
+        "reply": result["reply"],
+        "spoken_text": result["spoken_text"],
+        "audio_url": f"/api/audio_direct/{filename}"
+    }
 
 @app.post("/api/session/start")
 async def start_session(

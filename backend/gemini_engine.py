@@ -57,7 +57,12 @@ def is_gemini_configured() -> bool:
     return bool(key and not key.startswith("PASTE_YOUR_"))
 
 
-def _post_gemini(parts: list, temperature: float = 0.15, timeout: int = 90) -> Optional[str]:
+def _post_gemini(
+    parts: list,
+    temperature: float = 0.15,
+    timeout: int = 90,
+    response_mime_type: Optional[str] = None
+) -> Optional[str]:
     api_key = get_gemini_api_key()
     if not api_key or api_key.startswith("PASTE_YOUR_"):
         return None
@@ -65,11 +70,13 @@ def _post_gemini(parts: list, temperature: float = 0.15, timeout: int = 90) -> O
     primary = get_gemini_model()
     candidates_models = [primary] + [m for m in FALLBACK_MODELS if m != primary]
 
+    gen_config = {"temperature": temperature}
+    if response_mime_type:
+        gen_config["responseMimeType"] = response_mime_type
+
     payload = {
         "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": temperature
-        }
+        "generationConfig": gen_config
     }
 
     for model in candidates_models:

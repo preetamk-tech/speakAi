@@ -59,7 +59,7 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
     private LinearLayout layoutEmptyState;
     private TextView tvBookCount;
-    private MaterialButton btnQuickRead, btnSaveBook;
+    private MaterialButton btnQuickRead, btnSaveBook, btnEnglishTutor;
 
     private ActivityResultLauncher<String[]> filePickerLauncher;
     private String pendingMode = "book";
@@ -113,6 +113,7 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         tvBookCount = findViewById(R.id.tvBookCount);
         btnQuickRead = findViewById(R.id.btnQuickRead);
         btnSaveBook = findViewById(R.id.btnSaveBook);
+        btnEnglishTutor = findViewById(R.id.btnEnglishTutor);
         bookSearchBar = findViewById(R.id.bookSearchBar);
         miniPlayerController = new MiniPlayerController(this, findViewById(R.id.miniPlayerContainer));
         SearchBarHelper.attach(
@@ -141,6 +142,10 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
             pendingMode = "book";
             showSourcePickerDialog(getString(R.string.save_book_title));
         });
+
+        btnEnglishTutor.setOnClickListener(v ->
+                startActivity(new Intent(MainActivity.this, EnglishTutorActivity.class))
+        );
     }
 
     private void setupPickers() {

@@ -170,6 +170,31 @@ public class ApiClient {
         httpClient.newCall(request).enqueue(callback);
     }
 
+    public void sendTutorMessage(
+            String message,
+            JSONArray history,
+            String topic,
+            String level,
+            String gender,
+            Callback callback
+    ) {
+        MultipartBody requestBody = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("message", message != null ? message : "")
+                .addFormDataPart("history_json", history != null ? history.toString() : "[]")
+                .addFormDataPart("topic", topic != null ? topic : "Free Talk")
+                .addFormDataPart("level", level != null ? level : "simple")
+                .addFormDataPart("gender", gender != null ? gender : "female")
+                .build();
+
+        Request request = new Request.Builder()
+                .url(getBaseUrl() + "/api/tutor/chat")
+                .post(requestBody)
+                .build();
+
+        httpClient.newCall(request).enqueue(callback);
+    }
+
     public interface DownloadListener {
         void onProgress(int progress);
         void onSuccess(File downloadedFile);

@@ -29,4 +29,8 @@
     <string name="clear_search">Clear Search</string>
     <string name="search_books_hint">Search books by title...</string>
     <string name="search_chapters_hint">Search chapters or stories...</string>
+    <string name="english_tutor">English Buddy</string>
+    <string name="tutor_input_hint">Speak or type in English / Hinglish...</string>
+    <string name="tutor_summary">Session Summary</string>
+    <string name="tutor_clear">Clear Chat</string>
 </resources>
