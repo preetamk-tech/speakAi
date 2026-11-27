@@ -5,7 +5,10 @@ import android.content.Context;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import org.json.JSONArray;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -49,6 +52,27 @@ public class ApiClient {
         MultipartBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("file", file.getName(), fileBody)
+                .addFormDataPart("mode", mode)
+                .build();
+
+        Request request = new Request.Builder()
+                .url(getBaseUrl() + "/api/parse/start")
+                .post(requestBody)
+                .build();
+
+        httpClient.newCall(request).enqueue(callback);
+    }
+
+    public void startParseJobWithPages(List<String> pages, String bookTitle, String mode, Callback callback) {
+        JSONArray array = new JSONArray();
+        for (String p : pages) {
+            array.put(p != null ? p : "");
+        }
+
+        MultipartBody requestBody = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("pages_json", array.toString())
+                .addFormDataPart("book_title", bookTitle != null ? bookTitle : "Document.txt")
                 .addFormDataPart("mode", mode)
                 .build();
 

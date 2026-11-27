@@ -120,14 +120,11 @@ class SessionManager:
         chunk["status"] = "processing"
 
         try:
-            # Step A: Translate if needed
             translated = translate_chunk(chunk["original_text"], session["target_language"])
             chunk["translated_text"] = translated
 
-            # Step B: Prepare tone pacing
             script, params = prepare_speech_script(translated, session["detected_tone"])
 
-            # Step D: Synthesize narration audio
             await convert_text_to_audio(
                 text=script,
                 output_path=chunk["audio_path"],

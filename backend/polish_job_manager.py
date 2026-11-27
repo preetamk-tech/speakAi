@@ -167,7 +167,7 @@ class PolishJobManager:
                 job["completed_count"] += 1
             except Exception as e:
                 logger.error(f"Polish error on Ch {idx} in {job_id}: {e}")
-                # Fallback gracefully to raw normalized text so chapter never stalls
+                # Keep raw normalized text if cleanup fails so the chapter remains playable
                 ch["cleaned_content"] = ch["raw_content"]
                 ch["raw_content"] = ""
                 ch["status"] = "ready"

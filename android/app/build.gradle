@@ -29,6 +29,12 @@ android {
     buildFeatures {
         viewBinding false
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "speakAi-v${defaultConfig.versionName}-${variant.name}.apk"
+        }
+    }
 }
 
 dependencies {
@@ -43,4 +49,8 @@ dependencies {
     
     // Media & Audio Playback
     implementation 'androidx.media:media:1.7.0'
+
+    // Lightweight on-device OCR via Google Play Services for scanned PDFs/images
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-devanagari:16.0.0'
+    implementation 'com.google.android.gms:play-services-tasks:18.1.0'
 }

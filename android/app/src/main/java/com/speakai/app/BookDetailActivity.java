@@ -21,16 +21,20 @@ import com.speakai.app.models.Book;
 import com.speakai.app.models.Chapter;
 import com.speakai.app.network.ChapterSyncManager;
 import com.speakai.app.ui.MiniPlayerController;
+import com.speakai.app.ui.SearchBarHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class BookDetailActivity extends AppCompatActivity implements ChapterAdapter.OnChapterClickListener, ChapterSyncManager.SyncListener {
 
     private long bookId;
     private AppDatabaseHelper dbHelper;
     private Book currentBook;
+    private final List<Chapter> allChapters = new ArrayList<>();
     private final List<Chapter> chapterList = new ArrayList<>();
+    private String currentChapterQuery = "";
     private ChapterAdapter adapter;
 
     private TextView tvHeaderTitle, tvDetailBookTitle, tvDetailTotalChapters, tvDetailProgressText;
@@ -90,6 +94,14 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
         btnDeleteBookDetail = findViewById(R.id.btnDeleteBookDetail);
         rvChapters = findViewById(R.id.rvChapters);
         miniPlayerController = new MiniPlayerController(this, findViewById(R.id.miniPlayerContainer));
+        SearchBarHelper.attach(
+                findViewById(R.id.chapterSearchBar),
+                getString(R.string.search_chapters_hint),
+                query -> {
+                    currentChapterQuery = query;
+                    applyChapterFilter();
+                }
+        );
 
         rvChapters.setLayoutManager(new LinearLayoutManager(this));
         adapter = new ChapterAdapter(chapterList, this);
@@ -141,8 +153,24 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
         tvDetailProgressText.setText(currentBook.getOverallProgress() + "% Completed");
         pbDetailOverallProgress.setProgress(currentBook.getOverallProgress());
 
+        allChapters.clear();
+        allChapters.addAll(dbHelper.getChaptersForBook(bookId));
+        applyChapterFilter();
+    }
+
+    private void applyChapterFilter() {
         chapterList.clear();
-        chapterList.addAll(dbHelper.getChaptersForBook(bookId));
+        String q = currentChapterQuery != null ? currentChapterQuery.toLowerCase(Locale.ROOT) : "";
+        for (Chapter ch : allChapters) {
+            if (q.isEmpty()) {
+                chapterList.add(ch);
+            } else {
+                String title = ch.getTitle() != null ? ch.getTitle().toLowerCase(Locale.ROOT) : "";
+                if (title.contains(q)) {
+                    chapterList.add(ch);
+                }
+            }
+        }
         adapter.notifyDataSetChanged();
     }
 

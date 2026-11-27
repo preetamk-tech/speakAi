@@ -36,26 +36,28 @@ app.add_middleware(
 async def start_parse_job(
     file: UploadFile = File(None),
     raw_text: str = Form(None),
+    pages_json: str = Form(None),
+    book_title: str = Form(None),
     mode: str = Form("book")
 ):
     """
     Starts an async document parsing job with real-time progress and ETA tracking.
-    mode='quick' skips library structuring and returns immediate narration text.
-    mode='book' filters non-content pages and structures chapters cleanly.
+    Accepts file upload, raw_text, or pre-extracted pages_json from on-device OCR.
     """
-    filename = "Document.txt"
+    filename = book_title or "Document.txt"
     file_bytes = None
 
     if file and file.filename:
         filename = file.filename
         file_bytes = await file.read()
-    elif not (raw_text and raw_text.strip()):
+    elif not ((raw_text and raw_text.strip()) or (pages_json and pages_json.strip())):
         raise HTTPException(status_code=400, detail="Please upload a document, photo, or provide text.")
 
     job_id = parse_job_manager.create_job(
         file_bytes=file_bytes,
         filename=filename,
         raw_text=raw_text,
+        pages_json=pages_json,
         mode=mode
     )
     return {

@@ -25,4 +25,8 @@
     <string name="background_play_desc">Keep playing when minimized or screen off</string>
     <string name="play_pause">Play or Pause</string>
     <string name="stop_playback">Stop Playback</string>
+    <string name="search">Search</string>
+    <string name="clear_search">Clear Search</string>
+    <string name="search_books_hint">Search books by title...</string>
+    <string name="search_chapters_hint">Search chapters or stories...</string>
 </resources>

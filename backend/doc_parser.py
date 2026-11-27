@@ -342,12 +342,17 @@ def filter_book_pages(pages_text: List[str]) -> List[str]:
 
 
 def _prepare_ocr_image(pil_img: Image.Image) -> Image.Image:
-    """Upscales low-resolution page scans in memory-efficient grayscale before OCR."""
+    """Resizes page scans in memory-efficient grayscale to crisp OCR dimensions."""
     img = pil_img.convert("L")
     w, h = img.size
-    if w < 1200:
-        img = img.resize((w * 2, h * 2), Image.Resampling.LANCZOS)
-    return ImageEnhance.Contrast(img).enhance(1.35)
+    if w > 1400:
+        scale = 1400.0 / w
+        img = img.resize((1400, max(1, int(h * scale))), Image.Resampling.BILINEAR)
+    elif w < 1000 and w > 0:
+        target_w = min(1300, w * 2)
+        scale = target_w / float(w)
+        img = img.resize((target_w, max(1, int(h * scale))), Image.Resampling.BILINEAR)
+    return ImageEnhance.Contrast(img).enhance(1.3)
 
 
 def extract_raw_pages_from_file(
@@ -394,20 +399,24 @@ def extract_raw_pages_from_file(
             progress_callback(done_count, max(1, total_pages))
 
         if ocr_tasks:
+            is_hosted = bool(os.environ.get("RENDER") or os.environ.get("PORT"))
+            if is_hosted:
+                os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
             def _ocr_page(item):
                 idx, img_bytes_list = item
                 parts = []
                 for b in img_bytes_list:
                     try:
                         pil_img = _prepare_ocr_image(Image.open(io.BytesIO(b)))
-                        txt = pytesseract.image_to_string(pil_img, lang="hin", config="--psm 6")
+                        txt = pytesseract.image_to_string(pil_img, lang="hin", config="--oem 1 --psm 6")
                         if txt.strip():
                             parts.append(txt.strip())
                     except Exception:
                         pass
                 return idx, "\n".join(parts)
 
-            workers = 2 if (os.environ.get("RENDER") or os.environ.get("PORT")) else min(6, os.cpu_count() or 4)
+            workers = 1 if is_hosted else min(6, os.cpu_count() or 4)
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = [executor.submit(_ocr_page, task) for task in ocr_tasks]
                 for fut in as_completed(futures):

@@ -145,8 +145,8 @@ def _clean_block_with_gemini(block_text: str, book_title: str = "", chapter_titl
 
 def clean_chapter_with_gemini(text: str, book_title: str = "", chapter_title: str = "") -> str:
     """
-    Repairs OCR typos, context errors, and sentence flow for a chapter using Gemini API,
-    falling back seamlessly to the built-in cleaner if Gemini is unconfigured or unreachable.
+    Repairs OCR typos, context errors, and sentence breaks for a chapter via Gemini,
+    falling back to the local cleaner if the API key is missing or unreachable.
     """
     base_clean = clean_text_for_speech(text)
     if not is_gemini_configured() or not base_clean.strip():

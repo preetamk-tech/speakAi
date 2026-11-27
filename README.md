@@ -1,137 +1,138 @@
 # speakAi
 
-A **Native Android (Java)** + **FastAPI** audiobook and document narrator built around a **stateless, zero-server-storage** architecture. Users can instantly listen to screenshots and single-page documents via **Quick Read**, or import full multi-chapter books and scanned PDFs into an offline-capable on-device library with real-time progress tracking, multilingual neural narration, and background playback.
+speakAi is a native Android (Java) and FastAPI audiobook/document reader built with on-device storage (`SQLite`) and a stateless backend. You can listen to single-page photos or screenshots using **Quick Read**, or import full multi-chapter books and scanned PDFs into your local library with an extracted Table of Contents, background processing, and offline playback.
 
----
+## Features
 
-## Architecture Overview
+- **On-Device Library Storage:** Books, extracted index text, chapter states, listening progress, and downloaded offline MP3s stay in local `SQLite` and app-private storage. Server sessions and temporary audio files are automatically cleaned up.
+- **Quick Read & Save Book Modes:**
+  - **Quick Read:** Reads screenshots, photos, or short documents directly into the player without adding them to your library.
+  - **Save Book:** Parses multi-chapter books in the background with a non-blocking progress card in the library list and automatic resume on app reopen.
+- **Index & Multi-Page Chapter Parsing:**
+  - Extracts front-matter Index / Table of Contents pages (`विषय`, `Contents`, `Index`) into a readable text viewer at the top of the book's chapter list (skipped when a book has no index).
+  - Segments stories/chapters across page breaks so multi-page chapters stay intact.
+- **On-Device OCR + Cloud Fallback:** Uses `PdfRenderer` + Google ML Kit Devanagari OCR on Android for scanned image PDFs (with server-side Tesseract OCR fallback) and `PyPDF` for text-embedded PDFs.
+- **Background Chapter Cleanup:** Refines Chapter 1 first for immediate playback, then cleans remaining chapters in a `4.5s`-paced background queue (with instant priority preemption if you open a later chapter directly).
+- **Audio Controls & Search:**
+  - Sticky bottom mini-player across library and chapter screens with Play/Pause and Stop controls.
+  - **Play in Background** toggle on the player screen (auto-pauses on app minimize or screen lock when OFF; continues with media notification controls when ON).
+  - Saved per-book and global defaults for **Language** (`hi`, `mr`, `gu`, `bn`, `ta`, `te`, `en`), **Voice Gender**, and **Speed** (`0.8x`–`1.5x`).
+  - Live search bars for both books and chapters.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-    Phone["Android Client (Pure Java + SQLite)"] -->|"1. Upload PDF / Image"| API["FastAPI Stateless Backend"]
-    API -->|"2. Text / Parallel OCR + Junk Filter"| Parser["Chapter & Text Pipeline"]
-    Parser -->|"3. Context & Sentence Repair"| AI["Gemini API (Multimodal + Text)"]
-    AI -->|"4. Ch 1 Ready + Background Queue"| Phone
-    Phone -->|"5. Stream / Private Offline Save"| TTS["Edge-TTS Neural Voices"]
+    Phone["Android Client (Java + SQLite + ML Kit OCR)"] -->|"PDF / Pages / Image"| API["FastAPI Backend"]
+    API -->|"Index & Chapter Parser"| Parser["Text & Chapter Pipeline"]
+    Parser -->|"OCR Repair & Cleanup"| Gemini["Gemini API"]
+    Gemini -->|"Ch 1 + Background Queue"| Phone
+    Phone -->|"Streaming / Offline MP3"| TTS["Edge-TTS Voices"]
 ```
-
-### Engineering Highlights
-
-- **Zero Server Storage:** All parsed books, chapter metadata, reading progress (`%`), and downloaded audio files remain exclusively on the user's device (`SQLite` + app-private internal storage). Temporary audio files generated on the backend are automatically purged within 20 minutes.
-- **Two-Mode Home Experience:**
-  - **Quick Read:** Extracts text from photos, screenshots, or single-page documents (with multimodal vision support) and streams directly to the player without cluttering the library.
-  - **Save Book:** Processes full books and scanned PDFs asynchronously with **real-time progress (`%`) and dynamic ETA**.
-- **Background Chapter Sync & Priority Preemption:** Chapter 1 is refined immediately on import for instant playback while remaining chapters refine in a background server queue and sync silently into local SQLite. Selecting any uncleaned middle/final chapter promotes it to the front of the queue on demand.
-- **Indian Scanned PDF Pipeline:** Automatically skips cover repeats, copyright/publisher notices, pin codes, and index pages, upscales low-resolution scans (`2x` grayscale + contrast boost) before parallel Tesseract OCR, and repairs broken Devanagari context and wrapped sentences.
-- **Background & Offline Playback:** Runs an Android `ForegroundService` (`mediaPlayback`) with lock-screen controls, variable speed (`0.8x`–`1.5x`), multilingual translation (`hi`, `mr`, `gu`, `bn`, `ta`, `te`, `en`), and private app-scoped MP3 caching.
-
----
 
 ## Tech Stack
 
-| Layer | Technologies |
+| Component | Stack |
 | :--- | :--- |
-| **Android Client** | Pure Java, Material Components, RecyclerView, SQLite (`SQLiteOpenHelper`), OkHttp 4, AndroidX Media `ForegroundService` |
-| **Backend API** | Python 3.10+, FastAPI, Uvicorn |
+| **Android App** | Java, Material Components, RecyclerView, SQLite (`SQLiteOpenHelper`), OkHttp 4, AndroidX Media Service, `PdfRenderer`, ML Kit Devanagari Text Recognition |
+| **Backend** | Python 3.13, FastAPI, Uvicorn |
 | **Parsing & OCR** | PyPDF, python-docx, Pillow, Tesseract OCR (`hin`, `eng`, `mar`, `guj`, `ben`, `tam`, `tel`) |
-| **AI & Narration** | Google Gemini REST API (Vision + Proofreading + Story Translation), Microsoft `edge-tts` Neural Voices |
-| **Deployment** | Docker (`python:3.10-slim` + Tesseract + FFmpeg) |
-
----
+| **Text & Speech** | Gemini REST API, `edge-tts` |
+| **Deployment** | Docker (`python:3.13-slim`, Tesseract, FFmpeg) on Render |
 
 ## Project Structure
 
 ```text
 speakAi/
-├── android/                                      # Native Android (Pure Java) project
+├── android/
 │   └── app/src/main/java/com/speakai/app/
-│       ├── MainActivity.java                     # Bookshelf, Quick Read & Save Book flows, live ETA dialog
-│       ├── BookDetailActivity.java               # Chapter list, overall progress, real-time sync updates
-│       ├── AudioPlayerActivity.java              # Chunked streaming, offline cache, language/speed/voice UI
+│       ├── SpeakAiApp.java
+│       ├── MainActivity.java
+│       ├── BookDetailActivity.java
+│       ├── AudioPlayerActivity.java
 │       ├── adapters/
 │       │   ├── BookAdapter.java
 │       │   └── ChapterAdapter.java
 │       ├── database/
-│       │   └── AppDatabaseHelper.java            # Local SQLite persistence & file cleanup
+│       │   └── AppDatabaseHelper.java
 │       ├── models/
 │       │   ├── Book.java
 │       │   ├── Chapter.java
 │       │   └── QuickReadHolder.java
 │       ├── network/
-│       │   ├── ApiClient.java                    # OkHttp client + configurable server endpoint
-│       │   └── ChapterSyncManager.java           # Background SQLite chapter synchronization
-│       └── services/
-│           └── AudioPlayerService.java           # Foreground media playback service
+│       │   ├── ApiClient.java
+│       │   ├── BookUploadManager.java
+│       │   └── ChapterSyncManager.java
+│       ├── services/
+│       │   └── AudioPlayerService.java
+│       ├── ui/
+│       │   ├── MiniPlayerController.java
+│       │   └── SearchBarHelper.java
+│       └── utils/
+│           ├── DocumentPreProcessor.java
+│           └── VoicePrefsHelper.java
 │
-├── backend/                                      # Stateless Python FastAPI backend
-│   ├── app.py                                    # REST endpoints & CORS setup
-│   ├── doc_parser.py                             # PDF/DOCX/TXT/Image extraction, parallel OCR, junk filter
-│   ├── chapter_parser.py                         # Chapter & act segmentation
-│   ├── gemini_engine.py                          # Multimodal Vision, proofreading & failover client
-│   ├── parse_job_manager.py                      # Async upload jobs with live progress % & ETA
-│   ├── polish_job_manager.py                     # Background chapter queue with priority preemption
-│   ├── session_manager.py                        # Chunked TTS streaming + 20-minute auto-purge
-│   ├── chunker.py                                # Sentence-boundary audio chunking
-│   ├── translator.py                             # Cross-language translation with script detection
-│   ├── tone_analyzer.py                          # Storytelling vs. formal pacing detector
-│   ├── tts_engine.py                             # Multi-language Edge-TTS voice mapping
-│   ├── Dockerfile                                # Production container with Tesseract & FFmpeg
+├── backend/
+│   ├── app.py
+│   ├── doc_parser.py
+│   ├── chapter_parser.py
+│   ├── gemini_engine.py
+│   ├── parse_job_manager.py
+│   ├── polish_job_manager.py
+│   ├── session_manager.py
+│   ├── chunker.py
+│   ├── translator.py
+│   ├── tone_analyzer.py
+│   ├── tts_engine.py
+│   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
 │
-├── run_server.sh                                 # Local development launcher
+├── run_server.sh
 └── .gitignore
 ```
 
----
-
 ## Local Setup
 
-### 1. Backend Setup
+### Backend
 
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
-
-Create `backend/.env` from the template:
-
-```bash
 cp .env.example .env
 ```
 
-Add your Gemini API key in `backend/.env`:
+Add your API key in `backend/.env`:
 
 ```env
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite-preview
 ```
 
-Start the server from the project root:
+Run from project root:
 
 ```bash
 ./run_server.sh
 ```
 
-Verify health endpoint at `http://localhost:8000/`.
+### Android
 
-### 2. Android App Setup
+1. Open `android/` in **Android Studio** (or build via Gradle).
+2. Set `DEFAULT_BASE_URL` in `android/app/src/main/java/com/speakai/app/network/ApiClient.java` if pointing to a local server.
+3. Build the APK:
 
-1. Open the `android/` directory in **Android Studio**.
-2. Sync Gradle and run on an emulator or physical Android device (`minSdk 24`, `targetSdk 34`).
-3. Tap the top-right **Settings (`⚙️`)** icon in the app to point to your local machine's IP (e.g., `http://192.168.x.x:8000`), emulator loopback (`http://10.0.2.2:8000`), or deployed HTTPS URL.
+```bash
+./gradlew -p android assembleDebug
+# Output: android/app/build/outputs/apk/debug/speakAi-v1.0.0-debug.apk
+```
 
----
+## Deployment (Render Docker)
 
-## Deploying Backend with Docker (Render)
-
-1. Push this repository to GitHub (`.gitignore` protects `backend/.env` and build artifacts).
-2. Create a **New Web Service** on **Render** connected to your repository:
+1. Push the repository to GitHub (`.gitignore` excludes `backend/.env` and build artifacts).
+2. Create a **New Web Service** on Render:
    - **Root Directory:** `backend`
-   - **Runtime:** `Docker`
-3. Add environment variables in Render Dashboard:
-   - `GEMINI_API_KEY` = `your_api_key_here`
-   - `GEMINI_MODEL` = `gemini-3.1-flash-lite-preview`
-4. Deploy and copy your `https://your-service.onrender.com` URL into the Android app's **Server Settings** (or update `DEFAULT_BASE_URL` in `ApiClient.java` before building a release APK).
+   - **Language / Runtime:** `Docker`
+3. Set `GEMINI_API_KEY` and `GEMINI_MODEL` in Render Environment Variables.
+4. Deploy and optionally upload the built APK under **GitHub Releases**.

@@ -28,6 +28,7 @@ import com.speakai.app.models.QuickReadHolder;
 import com.speakai.app.network.ApiClient;
 import com.speakai.app.network.ChapterSyncManager;
 import com.speakai.app.services.AudioPlayerService;
+import com.speakai.app.utils.VoicePrefsHelper;
 
 import org.json.JSONObject;
 
@@ -174,6 +175,13 @@ public class AudioPlayerActivity extends AppCompatActivity implements AudioPlaye
         tvPlayerChapterTitle.setText(currentChapter.getTitle());
         tvPlayerBookTitle.setText(bookTitle != null ? bookTitle : "speakAi Library");
 
+        if (!attachActive) {
+            selectedLanguage = VoicePrefsHelper.getLanguage(this, bookId);
+            selectedGender = VoicePrefsHelper.getGender(this, bookId);
+            currentSpeed = VoicePrefsHelper.getSpeed(this, bookId);
+            applySelectedControlsToUi();
+        }
+
         if (isQuickRead) {
             btnDownloadOffline.setVisibility(View.GONE);
         } else if (currentChapter.isDownloaded()
@@ -226,6 +234,7 @@ public class AudioPlayerActivity extends AppCompatActivity implements AudioPlaye
                 String newCode = LANG_CODES[position];
                 if (!newCode.equals(selectedLanguage)) {
                     selectedLanguage = newCode;
+                    VoicePrefsHelper.savePreferences(AudioPlayerActivity.this, bookId, selectedLanguage, selectedGender, currentSpeed);
                     if (audioService != null && !audioService.isOfflineMode()) {
                         audioService.changeVoiceOrLanguage(selectedLanguage, selectedGender);
                     }
@@ -242,6 +251,7 @@ public class AudioPlayerActivity extends AppCompatActivity implements AudioPlaye
         tgGender.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (isSyncingControls || !isChecked) return;
             selectedGender = (checkedId == R.id.btnMale) ? "male" : "female";
+            VoicePrefsHelper.savePreferences(AudioPlayerActivity.this, bookId, selectedLanguage, selectedGender, currentSpeed);
             if (audioService != null && !audioService.isOfflineMode()) {
                 audioService.changeVoiceOrLanguage(selectedLanguage, selectedGender);
             }
@@ -255,6 +265,7 @@ public class AudioPlayerActivity extends AppCompatActivity implements AudioPlaye
             else if (checkedId == R.id.btnSpeed12) currentSpeed = 1.2f;
             else if (checkedId == R.id.btnSpeed15) currentSpeed = 1.5f;
 
+            VoicePrefsHelper.savePreferences(AudioPlayerActivity.this, bookId, selectedLanguage, selectedGender, currentSpeed);
             if (audioService != null) {
                 audioService.setSpeed(currentSpeed);
             }
@@ -437,18 +448,22 @@ public class AudioPlayerActivity extends AppCompatActivity implements AudioPlaye
         pbBuffering.setVisibility(audioService.isBuffering() ? View.VISIBLE : View.GONE);
         btnPlayPause.setImageResource(audioService.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
 
-        isSyncingControls = true;
         selectedLanguage = audioService.getSelectedLanguage();
+        selectedGender = audioService.getSelectedGender();
+        currentSpeed = audioService.getCurrentSpeed();
+        applySelectedControlsToUi();
+    }
+
+    private void applySelectedControlsToUi() {
+        isSyncingControls = true;
         for (int i = 0; i < LANG_CODES.length; i++) {
             if (LANG_CODES[i].equals(selectedLanguage)) {
                 spLanguage.setSelection(i);
                 break;
             }
         }
-        selectedGender = audioService.getSelectedGender();
         tgGender.check("male".equals(selectedGender) ? R.id.btnMale : R.id.btnFemale);
 
-        currentSpeed = audioService.getCurrentSpeed();
         if (currentSpeed <= 0.85f) tgSpeed.check(R.id.btnSpeed08);
         else if (currentSpeed >= 1.4f) tgSpeed.check(R.id.btnSpeed15);
         else if (currentSpeed >= 1.15f) tgSpeed.check(R.id.btnSpeed12);

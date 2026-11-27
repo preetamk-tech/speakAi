@@ -29,6 +29,8 @@ import com.speakai.app.models.QuickReadHolder;
 import com.speakai.app.network.ApiClient;
 import com.speakai.app.network.BookUploadManager;
 import com.speakai.app.ui.MiniPlayerController;
+import com.speakai.app.ui.SearchBarHelper;
+import com.speakai.app.utils.DocumentPreProcessor;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -38,6 +40,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -47,7 +50,10 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
     private RecyclerView rvBooks;
     private BookAdapter adapter;
+    private final List<Book> allSavedBooks = new ArrayList<>();
     private final List<Book> bookList = new ArrayList<>();
+    private String currentBookQuery = "";
+    private View bookSearchBar;
     private AppDatabaseHelper dbHelper;
     private MiniPlayerController miniPlayerController;
 
@@ -107,7 +113,16 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
         tvBookCount = findViewById(R.id.tvBookCount);
         btnQuickRead = findViewById(R.id.btnQuickRead);
         btnSaveBook = findViewById(R.id.btnSaveBook);
+        bookSearchBar = findViewById(R.id.bookSearchBar);
         miniPlayerController = new MiniPlayerController(this, findViewById(R.id.miniPlayerContainer));
+        SearchBarHelper.attach(
+                bookSearchBar,
+                getString(R.string.search_books_hint),
+                query -> {
+                    currentBookQuery = query;
+                    applyBookFilter();
+                }
+        );
 
         rvBooks.setLayoutManager(new LinearLayoutManager(this));
         adapter = new BookAdapter(bookList, this);
@@ -248,10 +263,16 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
                     return;
                 }
 
-                ApiClient.getInstance(this).startParseJob(tempFile, mimeType, "quick", new Callback() {
+                File uploadQuickFile = tempFile;
+                if (mimeType != null && mimeType.startsWith("image/")) {
+                    uploadQuickFile = DocumentPreProcessor.optimizeImageIfLarge(tempFile);
+                }
+
+                final File quickCleanupFile = uploadQuickFile;
+                ApiClient.getInstance(this).startParseJob(uploadQuickFile, mimeType, "quick", new Callback() {
                     @Override
                     public void onFailure(Call call, java.io.IOException e) {
-                        tempFile.delete();
+                        quickCleanupFile.delete();
                         runOnUiThread(() -> {
                             dismissQuickProgressDialog();
                             Toast.makeText(MainActivity.this, "Connection failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -260,7 +281,7 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
 
                     @Override
                     public void onResponse(Call call, Response response) {
-                        tempFile.delete();
+                        quickCleanupFile.delete();
                         if (!response.isSuccessful()) {
                             runOnUiThread(() -> {
                                 dismissQuickProgressDialog();
@@ -383,20 +404,38 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
     }
 
     private void loadBooks() {
+        allSavedBooks.clear();
+        allSavedBooks.addAll(dbHelper.getAllBooks());
+        tvBookCount.setText(allSavedBooks.size() + " Books");
+        if (bookSearchBar != null) {
+            bookSearchBar.setVisibility(allSavedBooks.isEmpty() && !BookUploadManager.getInstance(this).isUploading()
+                    ? View.GONE : View.VISIBLE);
+        }
+        applyBookFilter();
+    }
+
+    private void applyBookFilter() {
         bookList.clear();
-        List<Book> saved = dbHelper.getAllBooks();
-        bookList.addAll(saved);
+        String q = currentBookQuery != null ? currentBookQuery.toLowerCase(Locale.ROOT) : "";
+        for (Book b : allSavedBooks) {
+            String title = b.getTitle() != null ? b.getTitle().toLowerCase(Locale.ROOT) : "";
+            if (q.isEmpty() || title.contains(q)) {
+                bookList.add(b);
+            }
+        }
 
         Book processingCard = BookUploadManager.getInstance(this).getProcessingBookCard();
         if (processingCard != null) {
-            // Place processing book card below existing saved books
-            bookList.add(processingCard);
+            String pTitle = processingCard.getTitle() != null ? processingCard.getTitle().toLowerCase(Locale.ROOT) : "";
+            if (q.isEmpty() || pTitle.contains(q)) {
+                // Place processing book card below existing saved books
+                bookList.add(processingCard);
+            }
         }
 
         adapter.notifyDataSetChanged();
 
-        tvBookCount.setText(saved.size() + " Books");
-        if (bookList.isEmpty()) {
+        if (bookList.isEmpty() && q.isEmpty()) {
             layoutEmptyState.setVisibility(View.VISIBLE);
             rvBooks.setVisibility(View.GONE);
         } else {

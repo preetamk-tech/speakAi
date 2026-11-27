@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 import asyncio
@@ -7,6 +8,7 @@ from typing import Dict, Any, Optional
 
 from doc_parser import (
     extract_raw_pages_from_file,
+    clean_raw_page_lines,
     clean_text_for_speech,
     separate_front_matter_and_index,
     parse_toc_entries,
@@ -56,6 +58,7 @@ class ParseJobManager:
         file_bytes: Optional[bytes],
         filename: str,
         raw_text: Optional[str] = None,
+        pages_json: Optional[str] = None,
         mode: str = "book"
     ) -> str:
         self._purge_old_jobs()
@@ -72,7 +75,7 @@ class ParseJobManager:
             "started_at": time.time()
         }
 
-        asyncio.create_task(self._run_job(job_id, file_bytes, filename, raw_text, mode))
+        asyncio.create_task(self._run_job(job_id, file_bytes, filename, raw_text, pages_json, mode))
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -101,6 +104,7 @@ class ParseJobManager:
         file_bytes: Optional[bytes],
         filename: str,
         raw_text: Optional[str],
+        pages_json: Optional[str],
         mode: str
     ):
         job = self.jobs.get(job_id)
@@ -153,10 +157,16 @@ class ParseJobManager:
                             }]
                         }
 
-                if file_bytes is not None:
+                if pages_json and pages_json.strip():
+                    raw_list = json.loads(pages_json)
+                    pages = [
+                        c for c in (clean_raw_page_lines(str(p)) for p in raw_list if str(p).strip())
+                        if c
+                    ]
+                elif file_bytes is not None:
                     pages = extract_raw_pages_from_file(file_bytes, filename, progress_callback=on_ocr_progress)
                 elif raw_text and raw_text.strip():
-                    pages = [raw_text.strip()]
+                    pages = [clean_raw_page_lines(raw_text.strip())]
                 else:
                     raise ValueError("Please upload a document, photo, or provide text.")
 

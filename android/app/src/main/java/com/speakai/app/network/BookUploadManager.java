@@ -8,6 +8,7 @@ import android.os.Looper;
 import com.speakai.app.database.AppDatabaseHelper;
 import com.speakai.app.models.Book;
 import com.speakai.app.models.Chapter;
+import com.speakai.app.utils.DocumentPreProcessor;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -92,45 +93,108 @@ public class BookUploadManager {
         return placeholder;
     }
 
-    public void startBookUpload(File tempFile, String displayFileName, String mimeType) {
+    public void startBookUpload(final File tempFile, final String displayFileName, final String mimeType) {
         isCancelled = false;
-        String cleanTitle = stripExtension(displayFileName);
-        saveState(true, "", cleanTitle, displayFileName, 5, "Uploading to server...", "");
+        final String cleanTitle = stripExtension(displayFileName);
+        saveState(true, "", cleanTitle, displayFileName, 5, "Preparing document...", "");
         notifyUpdated();
 
-        ApiClient.getInstance(appContext).startParseJob(tempFile, mimeType, "book", new Callback() {
-            @Override
-            public void onFailure(Call call, java.io.IOException e) {
-                safeDelete(tempFile);
-                if (isCancelled) return;
-                clearState();
-                notifyError("Upload connection failed: " + e.getMessage());
+        new Thread(() -> {
+            File uploadFile = tempFile;
+            List<String> preExtractedPages = null;
+            String lowerName = displayFileName != null ? displayFileName.toLowerCase() : "";
+
+            if (lowerName.endsWith(".pdf") || (mimeType != null && mimeType.contains("pdf"))) {
+                preExtractedPages = DocumentPreProcessor.tryExtractScannedPdfPages(
+                        appContext,
+                        uploadFile,
+                        new DocumentPreProcessor.ScanProgressCallback() {
+                            @Override
+                            public boolean isCancelled() {
+                                return BookUploadManager.this.isCancelled;
+                            }
+
+                            @Override
+                            public void onScanProgress(int done, int total, int etaSeconds) {
+                                int pct = 8 + Math.round((done / (float) Math.max(1, total)) * 67f);
+                                String stage = "Scanning page " + done + " of " + total + " on device...";
+                                String etaStr = formatEta(etaSeconds);
+                                prefs.edit()
+                                        .putInt(KEY_PROGRESS, pct)
+                                        .putString(KEY_STAGE, stage)
+                                        .putString(KEY_ETA, etaStr)
+                                        .apply();
+                                notifyUpdated();
+                            }
+                        }
+                );
+            } else if (lowerName.endsWith(".docx")) {
+                preExtractedPages = DocumentPreProcessor.tryExtractDocxPages(uploadFile);
+            } else if (mimeType != null && mimeType.startsWith("image/")) {
+                uploadFile = DocumentPreProcessor.optimizeImageIfLarge(uploadFile);
             }
 
-            @Override
-            public void onResponse(Call call, Response response) {
-                safeDelete(tempFile);
-                if (isCancelled) return;
-
-                if (!response.isSuccessful()) {
-                    clearState();
-                    notifyError("Server error: " + response.code());
-                    return;
-                }
-
-                try {
-                    String body = response.body().string();
-                    JSONObject json = new JSONObject(body);
-                    String jobId = json.getString("job_id");
-                    saveState(true, jobId, cleanTitle, displayFileName, 8, "Processing document...", "");
-                    notifyUpdated();
-                    startPollingIfNeeded();
-                } catch (Exception ex) {
-                    clearState();
-                    notifyError("Upload error: " + ex.getMessage());
-                }
+            if (isCancelled) {
+                safeDelete(uploadFile);
+                return;
             }
-        });
+
+            final File fileToCleanup = uploadFile;
+            Callback uploadCallback = new Callback() {
+                @Override
+                public void onFailure(Call call, java.io.IOException e) {
+                    safeDelete(fileToCleanup);
+                    if (isCancelled) return;
+                    clearState();
+                    notifyError("Upload connection failed: " + e.getMessage());
+                }
+
+                @Override
+                public void onResponse(Call call, Response response) {
+                    safeDelete(fileToCleanup);
+                    if (isCancelled) return;
+
+                    if (!response.isSuccessful()) {
+                        clearState();
+                        notifyError("Server error: " + response.code());
+                        return;
+                    }
+
+                    try {
+                        String body = response.body().string();
+                        JSONObject json = new JSONObject(body);
+                        String jobId = json.getString("job_id");
+                        saveState(true, jobId, cleanTitle, displayFileName, 78, "Organizing chapters & index...", "");
+                        notifyUpdated();
+                        startPollingIfNeeded();
+                    } catch (Exception ex) {
+                        clearState();
+                        notifyError("Upload error: " + ex.getMessage());
+                    }
+                }
+            };
+
+            if (preExtractedPages != null && !preExtractedPages.isEmpty()) {
+                safeDelete(fileToCleanup);
+                prefs.edit()
+                        .putInt(KEY_PROGRESS, 76)
+                        .putString(KEY_STAGE, "Sending scanned pages to server...")
+                        .putString(KEY_ETA, "")
+                        .apply();
+                notifyUpdated();
+                ApiClient.getInstance(appContext).startParseJobWithPages(
+                        preExtractedPages, displayFileName, "book", uploadCallback
+                );
+            } else {
+                prefs.edit()
+                        .putString(KEY_STAGE, "Uploading to server...")
+                        .apply();
+                notifyUpdated();
+                ApiClient.getInstance(appContext).startParseJob(
+                        uploadFile, mimeType, "book", uploadCallback
+                );
+            }
+        }).start();
     }
 
     public void resumePendingIfNeeded() {
