@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">speakAi</string>
+    <string name="library_title">My Library</string>
+    <string name="no_books_message">No saved books yet.\nTap Quick Read to listen to a photo or page,\nor Save Book to store chapters in your library.</string>
+    <string name="add_book">Save Book</string>
+    <string name="quick_read">Quick Read</string>
+    <string name="quick_read_title">Quick Read (Listen Without Saving)</string>
+    <string name="save_book_title">Save Book to Library</string>
+    <string name="processing_title">Preparing Audio</string>
+    <string name="pick_document">Upload Document (PDF, Word, TXT)</string>
+    <string name="pick_image">Upload Screenshot / Photo (OCR)</string>
+    <string name="delete_book_title">Delete Book</string>
+    <string name="delete_book_confirm">Are you sure you want to delete this book and its offline audio?</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="resume">Resume</string>
+    <string name="chapters">Chapters</string>
+    <string name="download_offline">💾 Download Offline</string>
+    <string name="downloaded">✓ Downloaded Offline</string>
+    <string name="voice_gender">Voice:</string>
+    <string name="female">Female</string>
+    <string name="male">Male</string>
+    <string name="speed">Speed:</string>
+    <string name="server_settings">Server Settings</string>
+    <string name="server_url">Server URL</string>
+</resources>
