@@ -2,6 +2,8 @@ package com.speakai.app;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -94,15 +96,25 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
         btnResumeBook.setOnClickListener(v -> {
             if (chapterList.isEmpty()) return;
 
-            // Find first incomplete chapter, or start from beginning
-            Chapter target = chapterList.get(0);
+            // Find first incomplete playable chapter (skipping Index entry at chapterIndex == 0)
+            Chapter firstPlayable = null;
+            Chapter target = null;
             for (Chapter ch : chapterList) {
+                if (ch.getChapterIndex() <= 0) continue;
+                if (firstPlayable == null) firstPlayable = ch;
                 if (ch.getProgressPercent() < 100) {
                     target = ch;
                     break;
                 }
             }
-            openChapterPlayer(target);
+            if (target == null) {
+                target = firstPlayable != null ? firstPlayable : chapterList.get(0);
+            }
+            if (target.getChapterIndex() == 0) {
+                showIndexDialog(target);
+            } else {
+                openChapterPlayer(target);
+            }
         });
     }
 
@@ -131,7 +143,25 @@ public class BookDetailActivity extends AppCompatActivity implements ChapterAdap
 
     @Override
     public void onChapterClick(Chapter chapter) {
-        openChapterPlayer(chapter);
+        if (chapter.getChapterIndex() == 0) {
+            showIndexDialog(chapter);
+        } else {
+            openChapterPlayer(chapter);
+        }
+    }
+
+    private void showIndexDialog(Chapter indexChapter) {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_index_viewer, null);
+        TextView tvSubtitle = dialogView.findViewById(R.id.tvIndexSubtitle);
+        TextView tvContent = dialogView.findViewById(R.id.tvIndexContent);
+
+        tvSubtitle.setText(currentBook != null ? currentBook.getTitle() : "Table of Contents");
+        tvContent.setText(indexChapter.getContentText() != null ? indexChapter.getContentText() : "");
+
+        new AlertDialog.Builder(this)
+                .setView(dialogView)
+                .setPositiveButton("Close", null)
+                .show();
     }
 
     private void openChapterPlayer(Chapter chapter) {

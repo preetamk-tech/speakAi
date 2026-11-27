@@ -176,6 +176,37 @@ def clean_chapter_with_gemini(text: str, book_title: str = "", chapter_title: st
     return "\n\n".join(cleaned_blocks).strip()
 
 
+def clean_index_with_gemini(raw_index_text: str) -> str:
+    """
+    Repairs OCR typos in extracted Table of Contents entries while strictly keeping
+    the numbered 'N. Title' line-by-line structure intact.
+    """
+    if not raw_index_text or not raw_index_text.strip():
+        return ""
+    if not is_gemini_configured():
+        return raw_index_text.strip()
+
+    prompt = (
+        "You are an expert Indian-language proofreader fixing OCR typos in a book's Table of Contents (Index).\n"
+        "TASK:\n"
+        "Fix OCR spelling mistakes and broken Devanagari/English characters in each numbered title "
+        "(e.g. '3. र्गधा और धोबी' -> '3. गधा और धोबी', '18. दो बबल्ल्लयों की किानी' -> '18. दो बिल्लियों की कहानी').\n\n"
+        "STRICT RULES:\n"
+        "1. Keep the exact same numbering and order: one entry per line as '<number>. <clean title>'.\n"
+        "2. Do NOT add, merge, translate, or drop any entry.\n"
+        "3. Output ONLY the corrected numbered list, nothing else.\n\n"
+        f"RAW INDEX:\n{raw_index_text.strip()}\n\nCORRECTED INDEX:"
+    )
+
+    out = _post_gemini([{"text": prompt}], temperature=0.1, timeout=45)
+    if out:
+        cleaned_lines = [l.strip() for l in out.splitlines() if l.strip()]
+        raw_lines = [l.strip() for l in raw_index_text.splitlines() if l.strip()]
+        if len(cleaned_lines) >= max(1, int(len(raw_lines) * 0.7)):
+            return "\n".join(cleaned_lines)
+    return raw_index_text.strip()
+
+
 def translate_with_gemini(text: str, target_language: str) -> Optional[str]:
     """Translates narration text naturally while preserving storytelling emotion."""
     if not is_gemini_configured() or not text.strip():

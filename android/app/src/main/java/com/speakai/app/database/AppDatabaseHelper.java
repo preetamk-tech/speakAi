@@ -93,10 +93,15 @@ public class AppDatabaseHelper extends SQLiteOpenHelper {
         db.beginTransaction();
         long bookId = -1;
         try {
+            int playableChapters = 0;
+            for (Chapter ch : chapters) {
+                if (ch.getChapterIndex() > 0) playableChapters++;
+            }
+
             ContentValues bookValues = new ContentValues();
             bookValues.put(COL_BOOK_TITLE, book.getTitle());
             bookValues.put(COL_BOOK_FILENAME, book.getFilename());
-            bookValues.put(COL_BOOK_TOTAL_CHAPTERS, chapters.size());
+            bookValues.put(COL_BOOK_TOTAL_CHAPTERS, playableChapters > 0 ? playableChapters : chapters.size());
             bookValues.put(COL_BOOK_OVERALL_PROGRESS, 0);
             bookValues.put(COL_BOOK_CREATED_AT, System.currentTimeMillis());
             bookValues.put(COL_BOOK_POLISH_JOB_ID, book.getPolishJobId() != null ? book.getPolishJobId() : "");
@@ -269,10 +274,13 @@ public class AppDatabaseHelper extends SQLiteOpenHelper {
         if (chapters.isEmpty()) return;
 
         int total = 0;
+        int count = 0;
         for (Chapter c : chapters) {
+            if (c.getChapterIndex() <= 0) continue;
             total += c.getProgressPercent();
+            count++;
         }
-        int avg = total / chapters.size();
+        int avg = count > 0 ? (total / count) : 0;
 
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();

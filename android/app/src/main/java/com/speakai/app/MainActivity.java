@@ -376,7 +376,11 @@ public class MainActivity extends AppCompatActivity implements BookAdapter.OnBoo
             Book book = new Book();
             book.setTitle(title);
             book.setFilename(fileName);
-            book.setTotalChapters(chapters.size());
+            int playableCount = 0;
+            for (Chapter ch : chapters) {
+                if (ch.getChapterIndex() > 0) playableCount++;
+            }
+            book.setTotalChapters(playableCount > 0 ? playableCount : chapters.size());
             book.setPolishJobId(polishJobId);
 
             long bookId = dbHelper.insertBook(book, chapters);

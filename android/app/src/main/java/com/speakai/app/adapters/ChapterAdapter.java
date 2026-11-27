@@ -39,6 +39,24 @@ public class ChapterAdapter extends RecyclerView.Adapter<ChapterAdapter.ChapterV
     @Override
     public void onBindViewHolder(@NonNull ChapterViewHolder holder, int position) {
         Chapter chapter = chapters.get(position);
+
+        if (chapter.getChapterIndex() == 0) {
+            holder.tvChapterNumber.setText("≡");
+            holder.tvChapterTitle.setText(chapter.getTitle());
+            holder.pbChapterProgress.setVisibility(View.GONE);
+            holder.ivDownloadStatus.setVisibility(View.GONE);
+            holder.btnPlayChapter.setVisibility(View.GONE);
+            holder.tvChapterProgressPercent.setText("View Index");
+            holder.tvChapterProgressPercent.setTextColor(holder.itemView.getContext().getColor(R.color.accent));
+
+            holder.itemView.setOnClickListener(v -> {
+                if (listener != null) listener.onChapterClick(chapter);
+            });
+            return;
+        }
+
+        holder.pbChapterProgress.setVisibility(View.VISIBLE);
+        holder.btnPlayChapter.setVisibility(View.VISIBLE);
         holder.tvChapterNumber.setText(String.valueOf(chapter.getChapterIndex()));
         holder.tvChapterTitle.setText(chapter.getTitle());
         holder.pbChapterProgress.setProgress(chapter.getProgressPercent());

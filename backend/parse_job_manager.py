@@ -5,9 +5,20 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from doc_parser import extract_pages_from_file, clean_text_for_speech, filter_book_pages
+from doc_parser import (
+    extract_raw_pages_from_file,
+    clean_text_for_speech,
+    separate_front_matter_and_index,
+    parse_toc_entries,
+    format_toc_text,
+)
 from chapter_parser import split_into_chapters
-from gemini_engine import extract_text_from_image_with_gemini, clean_chapter_with_gemini, is_gemini_configured
+from gemini_engine import (
+    extract_text_from_image_with_gemini,
+    clean_chapter_with_gemini,
+    clean_index_with_gemini,
+    is_gemini_configured,
+)
 from polish_job_manager import polish_job_manager
 
 logger = logging.getLogger(__name__)
@@ -137,39 +148,28 @@ class ParseJobManager:
                         }
 
                 if file_bytes is not None:
-                    pages = extract_pages_from_file(file_bytes, filename, progress_callback=on_ocr_progress)
+                    pages = extract_raw_pages_from_file(file_bytes, filename, progress_callback=on_ocr_progress)
                 elif raw_text and raw_text.strip():
-                    pages = [clean_text_for_speech(raw_text.strip())]
+                    pages = [raw_text.strip()]
                 else:
                     raise ValueError("Please upload a document, photo, or provide text.")
 
                 if not pages:
                     raise ValueError("No readable text found in document or photo.")
 
-                job["progress"] = 80
-                job["stage"] = "Filtering non-content pages & organizing..."
-                job["eta_seconds"] = 3
-
-                if mode == "book" and len(pages) > 2:
-                    cleaned_pages = filter_book_pages(pages)
-                else:
-                    cleaned_pages = pages
-
-                full_text = "\n\n".join(cleaned_pages).strip()
-                if not full_text:
-                    raise ValueError("No readable story content remained after filtering.")
-
                 if mode == "quick":
                     job["progress"] = 90
                     job["stage"] = "Refining sentences for clear narration..."
                     job["eta_seconds"] = 1
-                    polished = clean_chapter_with_gemini(full_text, book_title=book_title, chapter_title=book_title)
+                    full_quick_text = clean_text_for_speech("\n\n".join(pages).strip())
+                    polished = clean_chapter_with_gemini(full_quick_text, book_title=book_title, chapter_title=book_title)
                     return {
                         "mode": "quick",
                         "book_title": book_title,
                         "chapters": [{
                             "index": 1,
                             "chapter_index": 1,
+                            "is_index": False,
                             "title": book_title,
                             "content": polished,
                             "text": polished,
@@ -178,29 +178,56 @@ class ParseJobManager:
                         }]
                     }
 
-                job["progress"] = 85
+                job["progress"] = 80
+                job["stage"] = "Extracting index & filtering non-content pages..."
+                job["eta_seconds"] = 3
+
+                index_text, toc_entries, content_pages = separate_front_matter_and_index(pages)
+                full_text = "\n".join(content_pages).strip()
+                if not full_text:
+                    raise ValueError("No readable story content remained after filtering.")
+
+                if index_text and is_gemini_configured():
+                    job["progress"] = 83
+                    job["stage"] = "Formatting book index..."
+                    clean_idx = clean_index_with_gemini(index_text)
+                    parsed_clean_toc = parse_toc_entries([clean_idx]) if clean_idx else []
+                    if parsed_clean_toc:
+                        toc_entries = parsed_clean_toc
+                        index_text = format_toc_text(parsed_clean_toc)
+                    elif clean_idx:
+                        index_text = clean_idx
+
+                job["progress"] = 86
                 job["stage"] = "Detecting chapters & preparing Chapter 1..."
                 job["eta_seconds"] = 2
 
-                chapters = split_into_chapters(full_text, default_book_title=book_title)
+                chapters = split_into_chapters(
+                    full_text,
+                    default_book_title=book_title,
+                    toc_entries=toc_entries,
+                    index_text=index_text
+                )
                 if not chapters:
                     raise ValueError("Could not segment chapters from document.")
 
-                # Clean Chapter 1 immediately so playback is instant with clean sentences
-                ch1 = chapters[0]
-                ch1_clean = clean_chapter_with_gemini(
-                    ch1["content"],
-                    book_title=book_title,
-                    chapter_title=ch1["title"]
-                )
-                ch1["content"] = ch1_clean
-                ch1["text"] = ch1_clean
-                ch1["word_count"] = len(ch1_clean.split())
-                ch1["clean_status"] = "ready"
-
-                # Mark remaining chapters as pending for immediate background refinement
-                for ch in chapters[1:]:
-                    ch["clean_status"] = "pending"
+                # Clean the first actual story chapter immediately; keep Index ready as formatted text
+                first_story = next((ch for ch in chapters if not ch.get("is_index")), None)
+                for ch in chapters:
+                    if ch.get("is_index"):
+                        ch["clean_status"] = "ready"
+                    elif ch is first_story:
+                        ch1_clean = clean_chapter_with_gemini(
+                            ch["content"],
+                            book_title=book_title,
+                            chapter_title=ch["title"]
+                        )
+                        ch["content"] = ch1_clean
+                        ch["text"] = ch1_clean
+                        ch["word_count"] = len(ch1_clean.split())
+                        ch["clean_status"] = "ready"
+                    else:
+                        ch["clean_status"] = "pending"
 
                 return {
                     "mode": "book",
@@ -220,16 +247,18 @@ class ParseJobManager:
                 }
             else:
                 chapters = prep["chapters"]
+                has_pending = any(ch.get("clean_status") == "pending" for ch in chapters)
                 polish_job_id = ""
-                if len(chapters) > 1:
+                if has_pending:
                     polish_job_id = polish_job_manager.create_polish_job(prep["book_title"], chapters)
 
+                actual_chapter_count = sum(1 for ch in chapters if not ch.get("is_index"))
                 result = {
                     "success": True,
                     "mode": "book",
                     "title": prep["book_title"],
                     "book_title": prep["book_title"],
-                    "total_chapters": len(chapters),
+                    "total_chapters": actual_chapter_count if actual_chapter_count > 0 else len(chapters),
                     "polish_job_id": polish_job_id,
                     "chapters": chapters
                 }

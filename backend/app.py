@@ -6,7 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 import asyncio
-from doc_parser import extract_text_from_file, extract_pages_from_file, clean_text_for_speech, filter_book_pages
+from doc_parser import (
+    extract_text_from_file,
+    extract_raw_pages_from_file,
+    clean_text_for_speech,
+    separate_front_matter_and_index,
+)
 from parse_job_manager import parse_job_manager
 from polish_job_manager import polish_job_manager
 from gemini_engine import clean_chapter_with_gemini
@@ -79,23 +84,26 @@ async def parse_document_chapters(
     """
     text = ""
     filename = "Document"
+    index_text = None
+    toc_entries = []
 
     if file and file.filename:
         filename = Path(file.filename).stem
         file_bytes = await file.read()
         try:
-            pages = extract_pages_from_file(file_bytes, file.filename)
-            if mode == "book" and len(pages) > 2:
-                pages = filter_book_pages(pages)
-            text = "\n\n".join(pages)
+            pages = extract_raw_pages_from_file(file_bytes, file.filename)
+            if mode == "book":
+                index_text, toc_entries, pages = separate_front_matter_and_index(pages)
+            text = "\n".join(pages)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"File parsing error: {str(e)}")
     elif raw_text and raw_text.strip():
-        text = clean_text_for_speech(raw_text.strip())
+        text = raw_text.strip()
     else:
         raise HTTPException(status_code=400, detail="Please upload a document or provide text.")
 
     if mode == "quick":
+        speech_text = clean_text_for_speech(text)
         return {
             "success": True,
             "title": filename,
@@ -104,20 +112,27 @@ async def parse_document_chapters(
             "chapters": [{
                 "index": 1,
                 "chapter_index": 1,
+                "is_index": False,
                 "title": filename,
-                "content": text,
-                "text": text,
-                "word_count": len(text.split())
+                "content": speech_text,
+                "text": speech_text,
+                "word_count": len(speech_text.split())
             }]
         }
 
-    chapters = split_into_chapters(text, default_book_title=filename)
+    chapters = split_into_chapters(
+        text,
+        default_book_title=filename,
+        toc_entries=toc_entries,
+        index_text=index_text
+    )
+    actual_chapters = sum(1 for ch in chapters if not ch.get("is_index"))
 
     return {
         "success": True,
         "title": filename,
         "book_title": filename,
-        "total_chapters": len(chapters),
+        "total_chapters": actual_chapters if actual_chapters > 0 else len(chapters),
         "chapters": chapters
     }
 

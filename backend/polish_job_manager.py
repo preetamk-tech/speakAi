@@ -13,8 +13,8 @@ class PolishJobManager:
     def __init__(self):
         self.jobs: Dict[str, Dict[str, Any]] = {}
 
-    def _purge_expired(self, max_age_seconds: int = 1200):
-        """Removes stale background polish jobs after 20 minutes."""
+    def _purge_expired(self, max_age_seconds: int = 3600):
+        """Removes stale background polish jobs after 60 minutes."""
         now = time.time()
         expired = [jid for jid, j in self.jobs.items() if (now - j.get("created_at", now)) > max_age_seconds]
         for jid in expired:
